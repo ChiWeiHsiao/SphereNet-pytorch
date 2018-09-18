@@ -18,17 +18,52 @@ def genuv(h, w):
     return np.stack([u, v], axis=-1)
 
 
-def uv2img_idx(uv, h, w, u_fov, v_fov):
+def uv2xyz(uv):
+    sin_u = np.sin(uv[..., 0])
+    cos_u = np.cos(uv[..., 0])
+    sin_v = np.sin(uv[..., 1])
+    cos_v = np.cos(uv[..., 1])
+    return np.stack([
+        cos_v * cos_u,
+        cos_v * sin_u,
+        sin_v
+    ], axis=-1)
+
+
+def xyz2uv(xyz):
+    c = np.sqrt((xyz[..., :2] ** 2).sum(-1))
+    u = np.arctan2(xyz[..., 1], xyz[..., 0])
+    v = np.arctan2(xyz[..., 2], c)
+    return np.stack([u, v], axis=-1)
+
+
+def uv2img_idx(uv, h, w, u_fov, v_fov, v_c=0):
     assert 0 < u_fov and u_fov < np.pi
     assert 0 < v_fov and v_fov < np.pi
-    
-    x = np.tan(uv[..., 0])
-    y = np.tan(uv[..., 1]) / np.cos(uv[..., 0])
+    assert -np.pi < v_c and v_c < np.pi
+
+    xyz = uv2xyz(uv.astype(np.float64))
+    Ry = np.array([
+        [np.cos(v_c), 0, -np.sin(v_c)],
+        [0, 1, 0],
+        [np.sin(v_c), 0, np.cos(v_c)],
+    ])
+    xyz_rot = xyz.copy()
+    xyz_rot[..., 0] = np.cos(v_c) * xyz[..., 0] - np.sin(v_c) * xyz[..., 2]
+    xyz_rot[..., 1] = xyz[..., 1]
+    xyz_rot[..., 2] = np.sin(v_c) * xyz[..., 0] + np.cos(v_c) * xyz[..., 2]
+    uv_rot = xyz2uv(xyz_rot)
+
+    u = uv_rot[..., 0]
+    v = uv_rot[..., 1]
+
+    x = np.tan(u)
+    y = np.tan(v) / np.cos(u)
     x = x * w / (2 * np.tan(u_fov / 2)) + w / 2
     y = y * h / (2 * np.tan(v_fov / 2)) + h / 2
 
-    invalid = (uv[..., 0] < -u_fov / 2) | (uv[..., 0] > u_fov / 2) |\
-              (uv[..., 1] < -v_fov / 2) | (uv[..., 1] > v_fov / 2)
+    invalid = (u < -u_fov / 2) | (u > u_fov / 2) |\
+              (v < -v_fov / 2) | (v > v_fov / 2)
     x[invalid] = -100
     y[invalid] = -100
     
@@ -37,7 +72,7 @@ def uv2img_idx(uv, h, w, u_fov, v_fov):
 
 class OmniDataset(data.Dataset):
     def __init__(self, dataset, fov=120, outshape=(60, 60),
-                 flip=False, h_rotate=False,
+                 flip=False, h_rotate=False, v_rotate=False,
                  img_mean=None, img_std=None):
         '''
         Convert classification dataset to omnidirectional version
@@ -49,6 +84,7 @@ class OmniDataset(data.Dataset):
         self.outshape = outshape
         self.flip = flip
         self.h_rotate = h_rotate
+        self.v_rotate = v_rotate
         self.img_mean = img_mean
         self.img_std = img_std
 
@@ -61,7 +97,11 @@ class OmniDataset(data.Dataset):
         uv = genuv(*self.outshape)
         fov = self.fov * np.pi / 180
 
-        img_idx = uv2img_idx(uv, h, w, fov, fov)
+        if self.v_rotate:
+            v_c = np.random.uniform(-np.pi/2, np.pi/2)
+            img_idx = uv2img_idx(uv, h, w, fov, fov, v_c)
+        else:
+            img_idx = uv2img_idx(uv, h, w, fov, fov, 0)
         x = map_coordinates(img, img_idx, order=1)
 
         # Random flip
@@ -129,14 +169,18 @@ if __name__ == '__main__':
                         help='whether to apply random flip')
     parser.add_argument('--h_rotate', action='store_true',
                         help='whether to apply random panorama horizontal rotation')
+    parser.add_argument('--v_rotate', action='store_true',
+                        help='whether to apply random panorama vertical rotation')
     args = parser.parse_args()
 
     os.makedirs(args.out_dir, exist_ok=True)
 
     if args.dataset == 'OmniMNIST':
-        dataset = OmniMNIST(fov=args.fov, flip=args.flip, h_rotate=args.h_rotate)
+        dataset = OmniMNIST(fov=args.fov, flip=args.flip,
+                            h_rotate=args.h_rotate, v_rotate=args.v_rotate)
     elif args.dataset == 'OmniFashionMNIST':
-        dataset = OmniFashionMNIST(fov=args.fov, flip=args.flip, h_rotate=args.h_rotate)
+        dataset = OmniFashionMNIST(fov=args.fov, flip=args.flip,
+                                   h_rotate=args.h_rotate, v_rotate=args.v_rotate)
 
     for idx in args.idx:
         idx = int(idx)
