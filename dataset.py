@@ -114,22 +114,29 @@ if __name__ == '__main__':
     import argparse
     from PIL import Image
 
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--idx', nargs='+', required=True)
-    parser.add_argument('--out_dir', default='datas/demo')
+    parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    parser.add_argument('--idx', nargs='+', required=True,
+                        help='image indices to demo')
+    parser.add_argument('--out_dir', default='datas/demo',
+                        help='directory to output demo image')
     parser.add_argument('--dataset', default='OmniMNIST',
-                        choices=['OmniMNIST', 'OmniFashionMNIST'])
+                        choices=['OmniMNIST', 'OmniFashionMNIST'],
+                        help='which dataset to use')
 
-    parser.add_argument('--flip', action='store_true')
-    parser.add_argument('--h_rotate', action='store_true')
+    parser.add_argument('--fov', type=int, default=120,
+                        help='fov of the tangent plane')
+    parser.add_argument('--flip', action='store_true',
+                        help='whether to apply random flip')
+    parser.add_argument('--h_rotate', action='store_true',
+                        help='whether to apply random panorama horizontal rotation')
     args = parser.parse_args()
 
     os.makedirs(args.out_dir, exist_ok=True)
 
     if args.dataset == 'OmniMNIST':
-        dataset = OmniMNIST(flip=args.flip, h_rotate=args.h_rotate)
+        dataset = OmniMNIST(fov=args.fov, flip=args.flip, h_rotate=args.h_rotate)
     elif args.dataset == 'OmniFashionMNIST':
-        dataset = OmniFashionMNIST(flip=args.flip, h_rotate=args.h_rotate)
+        dataset = OmniFashionMNIST(fov=args.fov, flip=args.flip, h_rotate=args.h_rotate)
 
     for idx in args.idx:
         idx = int(idx)
