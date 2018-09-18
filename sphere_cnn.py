@@ -67,31 +67,63 @@ def gen_filters_coordinates(h, w):
     return co.transpose([4, 0, 1, 2, 3])
 
 
-def map_coordinates(input, coordinates, mode='nearest'):
+def map_coordinates(input, coordinates, mode='bilinear', pad='wrap'):
     ''' PyTorch version of scipy.ndimage.interpolation.map_coordinates
     input: (B, C, H, W)
     coordinates: (2, ...)
     mode: sampling method, options = {'nearest', 'bilinear'}
+    pad: options = {'zero', 'wrap'}
     '''
     if not torch.is_tensor(coordinates):
         coordinates = torch.FloatTensor(coordinates).to(input.device)
     elif coordinates.dtype != torch.float32:
         coordinates = coordinates.float()
-        
+    h = input.shape[2]
+    w = input.shape[3]
+    
+    def _coordinates_pad_wrap(h, w, coordinates):
+        coordinates[0] = coordinates[0] % h
+        coordinates[1] = coordinates[1] % w
+        return coordinates
+    
+    def _coordinates_pad_zero(h, w, coordinates):
+        out_of_bound_h = (coordinates[0] < 0) | (coordinates[0] > (h-1))
+        out_of_bound_w = (coordinates[1] < 0) | (coordinates[1] > (w-1))
+        coordinates[0, out_of_bound_h] = h
+        coordinates[1, out_of_bound_w] = w
+        return coordinates
+    
     if mode == 'nearest':
         coordinates = torch.round(coordinates).long()
-        return input[..., coordinates[0], coordinates[1]]
-        
+        if pad == 'wrap':
+            coordinates = _coordinates_pad_wrap(h, w, coordinates)
+        elif pad == 'zero':
+            # coordinates: 2, 3, 3
+            # out_of_bound: 3, 3
+            # return: B, C, H, W = 2, 3, 3, 3
+            input = nn.functional.pad(input, pad=(0, 1, 0, 1), mode='constant', value=0)
+            coordinates = _coordinates_pad_zero(h, w, coordinates)
+        return input[..., coordinates[0], coordinates[1]]   
     elif mode == 'bilinear':
         co_floor = torch.floor(coordinates).long()
         co_ceil = torch.ceil(coordinates).long()
+        d1 = (coordinates[1] - co_floor[1].detach().float())
+        d2 = (coordinates[0] - co_floor[0].detach().float())
+        if pad == 'wrap':
+            co_floor = _coordinates_pad_wrap(h, w, co_floor)
+            co_ceil = _coordinates_pad_wrap(h, w, co_ceil)
+        elif pad == 'zero':
+            input = nn.functional.pad(input, pad=(0, 1, 0, 1), mode='constant', value=0)
+            co_floor = _coordinates_pad_zero(h, w, co_floor)
+            co_ceil = _coordinates_pad_zero(h, w, co_ceil)
         f00 = input[..., co_floor[0], co_floor[1]]
         f10 = input[..., co_floor[0], co_ceil[1]]
         f01 = input[..., co_ceil[0], co_floor[1]]
         f11 = input[..., co_ceil[0], co_ceil[1]]
-        fx1 = f00 + (coordinates[1] - co_floor[1].float())*(f10 - f00)
-        fx2 = f01 + (coordinates[1] - co_floor[1].float())*(f11 - f01)
-        return fx1 + (coordinates[0] - co_floor[0].float())*(fx2 - fx1)
+        fx1 = f00 + d1*(f10 - f00)
+        fx2 = f01 + d1*(f11 - f01)
+        return fx1 + d2*(fx2 - fx1)    
+
 
 class SphereConv2D(nn.Module):
     '''
