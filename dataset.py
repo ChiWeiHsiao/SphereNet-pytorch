@@ -95,6 +95,19 @@ class OmniMNIST(OmniDataset):
         super(OmniMNIST, self).__init__(self.MNIST, *args, **kwargs)
 
 
+class OmniFashionMNIST(OmniDataset):
+    def __init__(self, root='datas/FashionMNIST', train=True,
+                 download=True, *args, **kwargs):
+        '''
+        Omnidirectional FashionMNIST
+        @root (str)       root directory storing the dataset
+        @train (bool)     train or test split
+        @download (bool)  whether to download if data now exist
+        '''
+        self.FashionMNIST = datasets.FashionMNIST(root, train=train, download=download)
+        super(OmniFashionMNIST, self).__init__(self.FashionMNIST, *args, **kwargs)
+
+
 if __name__ == '__main__':
 
     import os
@@ -104,6 +117,8 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--idx', nargs='+', required=True)
     parser.add_argument('--out_dir', default='datas/demo')
+    parser.add_argument('--dataset', default='OmniMNIST',
+                        choices=['OmniMNIST', 'OmniFashionMNIST'])
 
     parser.add_argument('--flip', action='store_true')
     parser.add_argument('--h_rotate', action='store_true')
@@ -111,7 +126,11 @@ if __name__ == '__main__':
 
     os.makedirs(args.out_dir, exist_ok=True)
 
-    dataset = OmniMNIST(flip=args.flip, h_rotate=args.h_rotate)
+    if args.dataset == 'OmniMNIST':
+        dataset = OmniMNIST(flip=args.flip, h_rotate=args.h_rotate)
+    elif args.dataset == 'OmniFashionMNIST':
+        dataset = OmniFashionMNIST(flip=args.flip, h_rotate=args.h_rotate)
+
     for idx in args.idx:
         idx = int(idx)
         path = os.path.join(args.out_dir, '%d.png' % idx)
