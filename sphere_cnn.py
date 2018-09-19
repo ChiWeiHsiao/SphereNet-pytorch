@@ -28,13 +28,13 @@ def get_xy(delta_phi, delta_theta):
         ]
     ])
 
+@lru_cache(None)
 def cal_index(h, w, img_r, img_c):
     '''  
         Calculate Kernel Sampling Pattern
         only support 3x3 filter
         return 9 locations: (3, 3, 2)
     '''
-    result = np.zeros((3, 3, 2))
     # pixel -> rad
     phi = -((img_r+0.5)/h*pi - pi/2)
     theta = (img_c+0.5)/w*2*pi-pi
@@ -55,15 +55,16 @@ def cal_index(h, w, img_r, img_c):
     # indexs out of image, equirectangular leftmost and rightmost pixel is adjacent
     new_c = (new_c + w) % w
     new_result = np.stack([new_r, new_c], axis=-1)
-    new_result[1, 1] = (img_r, img_c)            
-    return result
+    new_result[1, 1] = (img_r, img_c)
+    return new_result
 
 @lru_cache(None)
-def gen_filters_coordinates(h, w):
+def gen_filters_coordinates(h, w, stride=1):
     '''
-    return np array of kernel lo (2, H, W, 3, 3)
+    return np array of kernel lo (2, H/stride, W/stride, 3, 3)
     '''
-    co = np.array([[cal_index(h, w, i, j) for j in range(w)] for i in range(h)])
+    assert(isinstance(h, int) and isinstance(w, int))
+    co = np.array([[cal_index(h, w, i, j) for j in range(0, w, stride)] for i in range(0, h, stride)])
     return co.transpose([4, 0, 1, 2, 3])
 
 
@@ -126,26 +127,73 @@ def map_coordinates(input, coordinates, mode='bilinear', pad='wrap'):
 
 
 class SphereConv2D(nn.Module):
-    '''
+    '''  SphereConv2D
+    mode: way of sampling pixel rgb values with non-integer coordinates, options={'bilinear', 'nearest'}
     Note that this layer only support 3x3 filter
     '''
-    def __init__(self, in_c, out_c):
+    def __init__(self, in_c, out_c, stride=1, mode='bilinear'):
         super(SphereConv2D, self).__init__()
+        self.mode = mode
+        self.stride = stride
         self.conv = nn.Conv2d(in_c, out_c, kernel_size=3, stride=3, padding=0)
         
     def forward(self, x):
         # x: (B, C, H, W)
-        coordinates = gen_filters_coordinates(x.shape[2], x.shape[3])
-        x = map_coordinates(x, coordinates, mode='nearest')
+        coordinates = gen_filters_coordinates(x.shape[2], x.shape[3], self.stride)
+        x = map_coordinates(x, coordinates, mode=self.mode)
         x = x.permute(0, 1, 2, 4, 3, 5)
         x_sz = x.size()
         x = x.contiguous().view(x_sz[0], x_sz[1], x_sz[2]*x_sz[3], x_sz[4]*x_sz[5])
         return self.conv(x)
+
+
+class SphereMaxPool2D(nn.Module):
+    '''  SphereMaxPool2D
+    mode: way of sampling pixel rgb values with non-integer coordinates, options={'bilinear', 'nearest'}
+    Note that this layer only support 3x3 filter
+    '''
+    def __init__(self, stride=1, mode='bilinear'):
+        super(SphereMaxPool2D, self).__init__()
+        self.mode = mode
+        self.stride = stride
+        self.pool = nn.MaxPool2d(kernel_size=3, stride=3, padding=0, dilation=1, return_indices=False, ceil_mode=False)
+        
+    def forward(self, x):
+        # x: (B, C, H, W)
+        coordinates = gen_filters_coordinates(x.shape[2], x.shape[3], self.stride)
+        x = map_coordinates(x, coordinates, mode=self.mode)
+        x = x.permute(0, 1, 2, 4, 3, 5)
+        x_sz = x.size()
+        x = x.contiguous().view(x_sz[0], x_sz[1], x_sz[2]*x_sz[3], x_sz[4]*x_sz[5])
+        return self.pool(x)
         
 
-# test    
+    
 if __name__ == '__main__':    
-    cnn = SphereConv2D(3, 5)
-    out = cnn(torch.randn(2,3,10,10))
-    print(out.size())
-
+    # test cnn
+    cnn = SphereConv2D(3, 5, 1)
+    out = cnn(torch.randn(2, 3, 10, 10))
+    print('SphereConv2D(3, 5, 1) output shape: ', out.size())
+    # test pool
+    # create sample image
+    h, w = 100, 200
+    img = np.ones([h, w, 3])
+    for r in range(h):
+        for c in range(w):
+            img[r, c, 0] = img[r, c, 0] - r/h
+            img[r, c, 1] = img[r, c, 1] - c/w
+    plt.imsave('demo_original', img)
+    img = img.transpose([2, 0, 1])
+    img = np.expand_dims(img, 0)  # (B, C, H, W)
+    # pool
+    pool = SphereMaxPool2D(1)
+    out = pool(torch.from_numpy(img).float())
+    out = np.squeeze(out.numpy(), 0).transpose([1, 2, 0])
+    plt.imsave('demo_pool_1.png', out)
+    print('Save image after pooling with stride 1: demo_pool_1.png')
+    # pool with tride 3
+    pool = SphereMaxPool2D(3)
+    out = pool(torch.from_numpy(img).float())
+    out = np.squeeze(out.numpy(), 0).transpose([1, 2, 0])
+    plt.imsave('demo_pool_3.png', out)
+    print('Save image after pooling with stride 3: demo_pool_3.png')
