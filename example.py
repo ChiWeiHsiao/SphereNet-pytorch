@@ -20,7 +20,7 @@ class SphereNet(nn.Module):
         x = F.relu(self.pool1(self.conv1(x)))
         x = F.relu(self.pool2(self.conv2(x)))
         x = x.view(-1, 14400)  # flatten, [B, C, H, W) -> (B, C*H*W)
-        x = F.relu(self.fc(x))
+        x = self.fc(x)
         return F.log_softmax(x, dim=1)
 
 
@@ -35,7 +35,7 @@ class Net(nn.Module):
         x = F.relu(F.max_pool2d(self.conv1(x), 2))
         x = F.relu(F.max_pool2d(self.conv2(x), 2))
         x = x.view(-1, 64*13*13)  # flatten, [B, C, H, W) -> (B, C*H*W)
-        x = F.relu(self.fc(x))
+        x = self.fc(x)
         return F.log_softmax(x, dim=1)
 
        
@@ -81,10 +81,10 @@ def main():
     parser = argparse.ArgumentParser(description='SphereNet Example')
     parser.add_argument('--data', type=str, default='FashionMNIST',
                         help='dataset for training, options={"FashionMNIST", "MNIST"} (default: FashionMNIST)')
-    parser.add_argument('--batch-size', type=int, default=512, metavar='N',
-                        help='input batch size for training (default: 512)')
-    parser.add_argument('--test-batch-size', type=int, default=512, metavar='N',
-                        help='input batch size for testing (default: 512)')
+    parser.add_argument('--batch-size', type=int, default=128, metavar='N',
+                        help='input batch size for training')
+    parser.add_argument('--test-batch-size', type=int, default=1000, metavar='N',
+                        help='input batch size for testing')
     parser.add_argument('--epochs', type=int, default=10, metavar='N',
                         help='number of epochs to train (default: 10)')
     parser.add_argument('--lr', type=float, default=0.001, metavar='LR',
@@ -95,9 +95,9 @@ def main():
                         help='disables CUDA training')
     parser.add_argument('--seed', type=int, default=1, metavar='S',
                         help='random seed (default: 1)')
-    parser.add_argument('--log-interval', type=int, default=10, metavar='N',
+    parser.add_argument('--log-interval', type=int, default=1, metavar='N',
                         help='how many batches to wait before logging training status')
-    parser.add_argument('--save-interval', type=int, default=10, metavar='N',
+    parser.add_argument('--save-interval', type=int, default=1, metavar='N',
                         help='how many epochs to wait before saving model weights')
     args = parser.parse_args()
     use_cuda = not args.no_cuda and torch.cuda.is_available()
@@ -124,6 +124,12 @@ def main():
     model = Net().to(device)
     optimizer = torch.optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum)
     for epoch in range(1, args.epochs + 1):
+    	# conventional CNN
+        print('{} Conventional CNN {}'.format('='*10, '='*10))
+        train(args, model, device, train_loader, optimizer, epoch)
+        test(args, model, device, test_loader)
+        if epoch % args.save_interval == 0:
+        	torch.save(model.state_dict(), 'model.pkl')
         # SphereCNN
         # sphere_model.load_state_dict(torch.load('sphere_model.pkl'))
         print('{} Sphere CNN {}'.format('='*10, '='*10))
@@ -131,12 +137,6 @@ def main():
         test(args, sphere_model, device, test_loader)
         if epoch % args.save_interval == 0:
         	torch.save(sphere_model.state_dict(), 'sphere_model.pkl')
-       # conventional CNN
-        print('{} Conventional CNN {}'.format('='*10, '='*10))
-        train(args, model, device, train_loader, optimizer, epoch)
-        test(args, model, device, test_loader)
-        if epoch % args.save_interval == 0:
-        	torch.save(model.state_dict(), 'model.pkl')
 
 
 
