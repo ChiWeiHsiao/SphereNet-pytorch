@@ -60,17 +60,38 @@ def cal_index(h, w, img_r, img_c):
     new_result[1, 1] = (img_r, img_c)
     return new_result
 
+
 @lru_cache(None)
+def _gen_filters_coordinates(h, w, stride):
+    co = np.array([[cal_index(h, w, i, j) for j in range(0, w, stride)] for i in range(0, h, stride)])
+    return np.ascontiguousarray(co.transpose([4, 0, 1, 2, 3]))
+
+
 def gen_filters_coordinates(h, w, stride=1):
     '''
     return np array of kernel lo (2, H/stride, W/stride, 3, 3)
     '''
     assert(isinstance(h, int) and isinstance(w, int))
-    co = np.array([[cal_index(h, w, i, j) for j in range(0, w, stride)] for i in range(0, h, stride)])
-    return co.transpose([4, 0, 1, 2, 3])
+    return _gen_filters_coordinates(h, w, stride).copy()
 
 
-def map_coordinates(input, coordinates, mode='bilinear', pad='wrap'):
+def _slice_xy(input, r_coord, c_coord, slice_mode='tensor'):
+    if slice_mode == 'tensor':
+        return input[..., r_coord, c_coord]
+    elif slice_mode == 'points':
+        assert len(input.shape) == len(r_coord.shape)
+        assert input.shape[:2] == r_coord.shape[:2]
+        assert input.shape[:2] == c_coord.shape[:2]
+        bidx = torch.arange(input.size(0), device=r_coord.device).long()
+        cidx = torch.arange(input.size(1), device=r_coord.device).long()
+        bidx = bidx[:, None, None, None]
+        cidx = cidx[None, :, None, None]
+        return input[bidx, cidx, r_coord, c_coord]
+    else:
+        raise NotImplementedError()
+
+
+def map_coordinates(input, coordinates, mode='bilinear', pad='wrap', slice_mode='tensor'):
     ''' PyTorch version of scipy.ndimage.interpolation.map_coordinates
     input: (B, C, H, W)
     coordinates: (2, ...)
@@ -81,6 +102,7 @@ def map_coordinates(input, coordinates, mode='bilinear', pad='wrap'):
         coordinates = torch.FloatTensor(coordinates).to(input.device)
     elif coordinates.dtype != torch.float32:
         coordinates = coordinates.float()
+    coordinates.requires_grad = False
     h = input.shape[2]
     w = input.shape[3]
     
@@ -106,7 +128,7 @@ def map_coordinates(input, coordinates, mode='bilinear', pad='wrap'):
             # return: B, C, H, W = 2, 3, 3, 3
             input = nn.functional.pad(input, pad=(0, 1, 0, 1), mode='constant', value=0)
             coordinates = _coordinates_pad_zero(h, w, coordinates)
-        return input[..., coordinates[0], coordinates[1]]   
+        return _slice_xy(input, coordinates[0], coordinates[1], slice_mode)
     elif mode == 'bilinear':
         co_floor = torch.floor(coordinates).long()
         co_ceil = torch.ceil(coordinates).long()
@@ -119,10 +141,10 @@ def map_coordinates(input, coordinates, mode='bilinear', pad='wrap'):
             input = nn.functional.pad(input, pad=(0, 1, 0, 1), mode='constant', value=0)
             co_floor = _coordinates_pad_zero(h, w, co_floor)
             co_ceil = _coordinates_pad_zero(h, w, co_ceil)
-        f00 = input[..., co_floor[0], co_floor[1]]
-        f10 = input[..., co_floor[0], co_ceil[1]]
-        f01 = input[..., co_ceil[0], co_floor[1]]
-        f11 = input[..., co_ceil[0], co_ceil[1]]
+        f00 = _slice_xy(input, co_floor[0], co_floor[1], slice_mode)
+        f10 = _slice_xy(input, co_floor[0], co_ceil[1], slice_mode)
+        f01 = _slice_xy(input, co_ceil[0], co_floor[1], slice_mode)
+        f11 = _slice_xy(input, co_ceil[0], co_ceil[1], slice_mode)
         fx1 = f00 + d1*(f10 - f00)
         fx2 = f01 + d1*(f11 - f01)
         return fx1 + d2*(fx2 - fx1)    
@@ -164,17 +186,27 @@ class SphereMaxPool2D(nn.Module):
         super(SphereMaxPool2D, self).__init__()
         self.mode = mode
         self.stride = stride
-        self.pool = nn.MaxPool2d(kernel_size=3, stride=3, padding=0, dilation=1, return_indices=False, ceil_mode=False)
         
     def forward(self, x):
         # x: (B, C, H, W)
-        coordinates = gen_filters_coordinates(x.shape[2], x.shape[3], self.stride)
-        x = map_coordinates(x, coordinates, mode=self.mode)
-        x = x.permute(0, 1, 2, 4, 3, 5)
-        x_sz = x.size()
-        x = x.contiguous().view(x_sz[0], x_sz[1], x_sz[2]*x_sz[3], x_sz[4]*x_sz[5])
-        return self.pool(x)
+        with torch.no_grad():
+            # (2, H/2, W/2, 3, 3)
+            coordinates = gen_filters_coordinates(x.shape[2], x.shape[3], self.stride)
+            sz = coordinates.shape
+            # (2, H/2, W/2, 9)
+            coordinates = coordinates.reshape(sz[0], sz[1], sz[2], 9)
+            coordinates = torch.FloatTensor(coordinates).to(x.device)
+            # (B, C, H/2, W/2, 9)
+            _x = map_coordinates(x.detach(), coordinates, mode=self.mode)
+            maxv, maxi = _x.max(dim=4)
+            # maxi = maxi.cpu().numpy()
+            ridx = torch.arange(coordinates.size(1), device=x.device).long()
+            cidx = torch.arange(coordinates.size(2), device=x.device).long()
+            ridx = ridx[None, None, :, None]
+            cidx = cidx[None, None, None, :]
+            max_coord = coordinates[:, ridx, cidx, maxi]
         
+        return map_coordinates(x, max_coord, mode=self.mode, slice_mode='points')
 
     
 if __name__ == '__main__':    
