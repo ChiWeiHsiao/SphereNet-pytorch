@@ -109,8 +109,8 @@ def main():
     kwargs = {'num_workers': 1, 'pin_memory': True} if use_cuda else {}
 
     if args.data == 'FashionMNIST':
-        train_dataset = OmniFashionMNIST(fov=120, flip=True, h_rotate=True, v_rotate=True, train=True)
-        test_dataset = OmniFashionMNIST(fov=120, flip=True, h_rotate=True, v_rotate=True, train=False)
+        train_dataset = OmniFashionMNIST(fov=120, flip=True, h_rotate=True, v_rotate=True, img_std=255, train=True)
+        test_dataset = OmniFashionMNIST(fov=120, flip=True, h_rotate=True, v_rotate=True, img_std=255, train=False)
     elif args.data == 'MNIST':
         train_dataset = OmniMNIST(fov=120, flip=True, h_rotate=True, v_rotate=True, train=True)
         test_dataset = OmniMNIST(fov=120, flip=True, h_rotate=True, v_rotate=True, train=False)
