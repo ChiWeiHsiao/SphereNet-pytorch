@@ -9,10 +9,10 @@ import torch.nn.functional as F
 class SphereNet(nn.Module):
     def __init__(self):
         super(SphereNet, self).__init__()
-        self.conv1 = SphereConv2D(1, 32, stride=1, mode='bilinear')
-        self.pool1 = SphereMaxPool2D(stride=2, mode='bilinear')
-        self.conv2 = SphereConv2D(32, 64, stride=1, mode='bilinear')
-        self.pool2 = SphereMaxPool2D(stride=2, mode='bilinear')
+        self.conv1 = SphereConv2D(1, 32, stride=1)
+        self.pool1 = SphereMaxPool2D(stride=2)
+        self.conv2 = SphereConv2D(32, 64, stride=1)
+        self.pool2 = SphereMaxPool2D(stride=2)
         
         self.fc = nn.Linear(14400, 10)
 

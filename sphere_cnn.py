@@ -130,7 +130,6 @@ def map_coordinates(input, coordinates, mode='bilinear', pad='wrap'):
 
 class SphereConv2D(nn.Module):
     '''  SphereConv2D
-    mode: way of sampling pixel rgb values with non-integer coordinates, options={'bilinear', 'nearest'}
     Note that this layer only support 3x3 filter
     '''
     def __init__(self, in_c, out_c, stride=1):
