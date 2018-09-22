@@ -6,6 +6,8 @@ from functools import lru_cache
 import torch
 from torch import nn
 
+from deform_conv import ConvOffset2d
+
 
 # Calculate kernels of SphereCNN 
 @lru_cache(None)
@@ -131,20 +133,27 @@ class SphereConv2D(nn.Module):
     mode: way of sampling pixel rgb values with non-integer coordinates, options={'bilinear', 'nearest'}
     Note that this layer only support 3x3 filter
     '''
-    def __init__(self, in_c, out_c, stride=1, mode='bilinear'):
+    def __init__(self, in_c, out_c, stride=1):
         super(SphereConv2D, self).__init__()
-        self.mode = mode
         self.stride = stride
-        self.conv = nn.Conv2d(in_c, out_c, kernel_size=3, stride=3, padding=0)
+        self.conv = ConvOffset2d(in_c, out_c, kernel_size=3, padding=1, num_deformable_groups=1)
+        self.offset = None
         
     def forward(self, x):
         # x: (B, C, H, W)
-        coordinates = gen_filters_coordinates(x.shape[2], x.shape[3], self.stride)
-        x = map_coordinates(x, coordinates, mode=self.mode)
-        x = x.permute(0, 1, 2, 4, 3, 5)
-        x_sz = x.size()
-        x = x.contiguous().view(x_sz[0], x_sz[1], x_sz[2]*x_sz[3], x_sz[4]*x_sz[5])
-        return self.conv(x)
+        if self.offset is None or self.offset.shape[0] != x.shape[0] or\
+                self.offset.shape[-2:] != x.shape[-2:]:
+            coordinates = gen_filters_coordinates(x.shape[2], x.shape[3], self.stride)
+            oriidx = np.stack(np.meshgrid(range(x.size(3)), range(x.size(2)))[::-1], 0)
+            oriidx = oriidx[..., None, None]
+            offset = coordinates - oriidx
+            offset = offset.transpose(0, 3, 4, 1, 2)
+            offset = offset.reshape(1, 2 * 3 * 3, x.size(2), x.size(3))
+            offset = offset.repeat(x.size(0), axis=0)
+            self.offset = torch.tensor(offset, dtype=x.dtype, device=x.device)
+            self.offset.requires_grad = False
+
+        return self.conv(x, self.offset)
 
 
 class SphereMaxPool2D(nn.Module):
