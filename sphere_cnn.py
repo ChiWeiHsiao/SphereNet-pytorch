@@ -12,19 +12,19 @@ from torch import nn
 def get_xy(delta_phi, delta_theta):
     return np.array([
         [
-            (-tan(delta_theta), -1/cos(delta_theta)*tan(delta_phi)),
-            (-tan(delta_theta), 0),
             (-tan(delta_theta), 1/cos(delta_theta)*tan(delta_phi)),
-        ],
-        [
-            (0, -tan(delta_phi)),
-            (1, 1),
             (0, tan(delta_phi)),
+            (tan(delta_theta), 1/cos(delta_theta)*tan(delta_phi)),
         ],
         [
-            (tan(delta_theta), -1/cos(delta_theta)*tan(delta_phi)),
+            (-tan(delta_theta), 0),
+            (1, 1),
             (tan(delta_theta), 0),
-            (tan(delta_theta), 1/cos(delta_theta)*tan(delta_phi)),
+        ],
+        [
+            (-tan(delta_theta), -1/cos(delta_theta)*tan(delta_phi)),
+            (0, -tan(delta_phi)),
+            (tan(delta_theta), -1/cos(delta_theta)*tan(delta_phi)),
         ]
     ])
 
