@@ -117,7 +117,8 @@ class ConvOffset2d(Module):
                  stride=1,
                  padding=0,
                  dilation=1,
-                 num_deformable_groups=1):
+                 num_deformable_groups=1,
+                 bias=True):
         super(ConvOffset2d, self).__init__()
         self.in_channels = in_channels
         self.out_channels = out_channels
@@ -129,6 +130,9 @@ class ConvOffset2d(Module):
 
         self.weight = nn.Parameter(
             torch.Tensor(out_channels, in_channels, *self.kernel_size))
+        self.bias = None
+        if bias:
+            self.bias = nn.Parameter(torch.zeros(1, out_channels, 1, 1))
 
         self.reset_parameters()
 
@@ -140,6 +144,9 @@ class ConvOffset2d(Module):
         self.weight.data.uniform_(-stdv, stdv)
 
     def forward(self, input, offset):
-        return conv_offset2d(input, offset, self.weight, self.stride,
-                             self.padding, self.dilation,
-                             self.num_deformable_groups)
+        output = conv_offset2d(input, offset, self.weight, self.stride,
+                               self.padding, self.dilation,
+                               self.num_deformable_groups)
+        if self.bias is not None:
+            output = output + self.bias
+        return output
