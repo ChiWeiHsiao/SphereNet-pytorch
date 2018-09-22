@@ -78,23 +78,23 @@ def test(args, model, device, test_loader):
 
 def main():
     # Training settings
-    parser = argparse.ArgumentParser(description='SphereNet Example')
+    parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument('--data', type=str, default='FashionMNIST',
-                        help='dataset for training, options={"FashionMNIST", "MNIST"} (default: FashionMNIST)')
+                        help='dataset for training, options={"FashionMNIST", "MNIST"}')
     parser.add_argument('--batch-size', type=int, default=128, metavar='N',
                         help='input batch size for training')
     parser.add_argument('--test-batch-size', type=int, default=1000, metavar='N',
                         help='input batch size for testing')
     parser.add_argument('--epochs', type=int, default=10, metavar='N',
-                        help='number of epochs to train (default: 10)')
+                        help='number of epochs to train')
     parser.add_argument('--lr', type=float, default=0.001, metavar='LR',
-                        help='learning rate (default: 0.001)')
-    parser.add_argument('--momentum', type=float, default=0.5, metavar='M',
-                        help='SGD momentum (default: 0.5)')
+                        help='learning rate')
+    parser.add_argument('--momentum', type=float, default=0.9, metavar='M',
+                        help='SGD momentum')
     parser.add_argument('--no-cuda', action='store_true', default=False,
                         help='disables CUDA training')
     parser.add_argument('--seed', type=int, default=1, metavar='S',
-                        help='random seed (default: 1)')
+                        help='random seed')
     parser.add_argument('--log-interval', type=int, default=1, metavar='N',
                         help='how many batches to wait before logging training status')
     parser.add_argument('--save-interval', type=int, default=1, metavar='N',
