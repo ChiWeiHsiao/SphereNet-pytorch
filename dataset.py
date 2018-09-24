@@ -66,14 +66,14 @@ def uv2img_idx(uv, h, w, u_fov, v_fov, v_c=0):
               (v < -v_fov / 2) | (v > v_fov / 2)
     x[invalid] = -100
     y[invalid] = -100
-    
+
     return np.stack([y, x], axis=0)
 
 
 class OmniDataset(data.Dataset):
     def __init__(self, dataset, fov=120, outshape=(60, 60),
                  flip=False, h_rotate=False, v_rotate=False,
-                 img_mean=None, img_std=None):
+                 img_mean=None, img_std=None, fix_aug=False):
         '''
         Convert classification dataset to omnidirectional version
         @dataset  dataset with same interface as torch.utils.data.Dataset
@@ -88,6 +88,17 @@ class OmniDataset(data.Dataset):
         self.img_mean = img_mean
         self.img_std = img_std
 
+        self.aug = None
+        if fix_aug:
+            self.aug = [
+                {
+                    'flip': np.random.randint(2) == 0,
+                    'h_rotate': np.random.randint(outshape[1]),
+                    'v_rotate': np.random.uniform(-np.pi/2, np.pi/2),
+                }
+                for _ in range(len(self.dataset))
+            ]
+
     def __len__(self):
         return len(self.dataset)
 
@@ -98,19 +109,28 @@ class OmniDataset(data.Dataset):
         fov = self.fov * np.pi / 180
 
         if self.v_rotate:
-            v_c = np.random.uniform(-np.pi/2, np.pi/2)
+            if self.aug is not None:
+                v_c = self.aug[idx]['v_rotate']
+            else:
+                v_c = np.random.uniform(-np.pi/2, np.pi/2)
             img_idx = uv2img_idx(uv, h, w, fov, fov, v_c)
         else:
             img_idx = uv2img_idx(uv, h, w, fov, fov, 0)
         x = map_coordinates(img, img_idx, order=1)
 
         # Random flip
-        if self.flip and np.random.randint(2) == 0:
+        if self.aug is not None:
+            if self.aug[idx]['flip']:
+                x = np.flip(x, axis=1)
+        elif self.flip and np.random.randint(2) == 0:
             x = np.flip(x, axis=1)
 
         # Random horizontal rotate
         if self.h_rotate:
-            dx = np.random.randint(x.shape[1])
+            if self.aug is not None:
+                dx = self.aug[idx]['h_rotate']
+            else:
+                dx = np.random.randint(x.shape[1])
             x = np.roll(x, dx, axis=1)
 
         # Normalize image
@@ -171,16 +191,20 @@ if __name__ == '__main__':
                         help='whether to apply random panorama horizontal rotation')
     parser.add_argument('--v_rotate', action='store_true',
                         help='whether to apply random panorama vertical rotation')
+    parser.add_argument('--fix_aug', action='store_true',
+                        help='whether to apply random panorama vertical rotation')
     args = parser.parse_args()
 
     os.makedirs(args.out_dir, exist_ok=True)
 
     if args.dataset == 'OmniMNIST':
         dataset = OmniMNIST(fov=args.fov, flip=args.flip,
-                            h_rotate=args.h_rotate, v_rotate=args.v_rotate)
+                            h_rotate=args.h_rotate, v_rotate=args.v_rotate,
+                            fix_aug=args.fix_aug)
     elif args.dataset == 'OmniFashionMNIST':
         dataset = OmniFashionMNIST(fov=args.fov, flip=args.flip,
-                                   h_rotate=args.h_rotate, v_rotate=args.v_rotate)
+                                   h_rotate=args.h_rotate, v_rotate=args.v_rotate,
+                                   fix_aug=args.fix_aug)
 
     for idx in args.idx:
         idx = int(idx)
