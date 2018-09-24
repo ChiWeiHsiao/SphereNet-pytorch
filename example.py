@@ -21,7 +21,7 @@ class SphereNet(nn.Module):
         x = F.relu(self.pool2(self.conv2(x)))
         x = x.view(-1, 14400)  # flatten, [B, C, H, W) -> (B, C*H*W)
         x = self.fc(x)
-        return F.log_softmax(x, dim=1)
+        return x
 
 
 class Net(nn.Module):
@@ -36,7 +36,7 @@ class Net(nn.Module):
         x = F.relu(F.max_pool2d(self.conv2(x), 2))
         x = x.view(-1, 64*13*13)  # flatten, [B, C, H, W) -> (B, C*H*W)
         x = self.fc(x)
-        return F.log_softmax(x, dim=1)
+        return x
 
        
 def train(args, model, device, train_loader, optimizer, epoch):
@@ -47,7 +47,7 @@ def train(args, model, device, train_loader, optimizer, epoch):
         if data.dim() == 3:
             data = data.unsqueeze(1)  # (B, H, W) -> (B, C, H, W)
         output = model(data)
-        loss = F.nll_loss(output, target)
+        loss = F.cross_entropy(output, target)
         loss.backward()
         optimizer.step()
         if batch_idx % args.log_interval == 0:
@@ -66,7 +66,7 @@ def test(args, model, device, test_loader):
             if data.dim() == 3:
                 data = data.unsqueeze(1)  # (B, H, W) -> (B, C, H, W)
             output = model(data)
-            test_loss += F.nll_loss(output, target, reduction='sum').item() # sum up batch loss
+            test_loss += F.cross_entropy(output, target).item() # sum up batch loss
             pred = output.max(1, keepdim=True)[1] # get the index of the max log-probability
             correct += pred.eq(target.view_as(pred)).sum().item()
 
@@ -83,11 +83,11 @@ def main():
                         help='dataset for training, options={"FashionMNIST", "MNIST"}')
     parser.add_argument('--batch-size', type=int, default=128, metavar='N',
                         help='input batch size for training')
-    parser.add_argument('--test-batch-size', type=int, default=1000, metavar='N',
+    parser.add_argument('--test-batch-size', type=int, default=128, metavar='N',
                         help='input batch size for testing')
     parser.add_argument('--epochs', type=int, default=10, metavar='N',
                         help='number of epochs to train')
-    parser.add_argument('--lr', type=float, default=0.001, metavar='LR',
+    parser.add_argument('--lr', type=float, default=1e-3, metavar='LR',
                         help='learning rate')
     parser.add_argument('--momentum', type=float, default=0.9, metavar='M',
                         help='SGD momentum')
@@ -124,12 +124,6 @@ def main():
     model = Net().to(device)
     optimizer = torch.optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum)
     for epoch in range(1, args.epochs + 1):
-    	# conventional CNN
-        print('{} Conventional CNN {}'.format('='*10, '='*10))
-        train(args, model, device, train_loader, optimizer, epoch)
-        test(args, model, device, test_loader)
-        if epoch % args.save_interval == 0:
-        	torch.save(model.state_dict(), 'model.pkl')
         # SphereCNN
         # sphere_model.load_state_dict(torch.load('sphere_model.pkl'))
         print('{} Sphere CNN {}'.format('='*10, '='*10))
@@ -137,7 +131,12 @@ def main():
         test(args, sphere_model, device, test_loader)
         if epoch % args.save_interval == 0:
         	torch.save(sphere_model.state_dict(), 'sphere_model.pkl')
-
+        # conventional CNN
+        print('{} Conventional CNN {}'.format('='*10, '='*10))
+        train(args, model, device, train_loader, optimizer, epoch)
+        test(args, model, device, test_loader)
+        if epoch % args.save_interval == 0:
+            torch.save(model.state_dict(), 'model.pkl')
 
 
 if __name__ == '__main__':
