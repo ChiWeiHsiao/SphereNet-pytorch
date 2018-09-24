@@ -4,6 +4,7 @@ from sphere_cnn import SphereConv2D, SphereMaxPool2D
 import torch
 from torch import nn
 import torch.nn.functional as F
+import numpy as np
 
 
 class SphereNet(nn.Module):
@@ -79,15 +80,17 @@ def test(args, model, device, test_loader):
 def main():
     # Training settings
     parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    parser.add_argument('--data', type=str, default='FashionMNIST',
+    parser.add_argument('--data', type=str, default='MNIST',
                         help='dataset for training, options={"FashionMNIST", "MNIST"}')
     parser.add_argument('--batch-size', type=int, default=128, metavar='N',
                         help='input batch size for training')
     parser.add_argument('--test-batch-size', type=int, default=128, metavar='N',
                         help='input batch size for testing')
-    parser.add_argument('--epochs', type=int, default=10, metavar='N',
+    parser.add_argument('--epochs', type=int, default=100, metavar='N',
                         help='number of epochs to train')
-    parser.add_argument('--lr', type=float, default=1e-3, metavar='LR',
+    parser.add_argument('--optimizer', type=str, default='adam',
+                        help='optimizer, options={"adam, sgd"}')
+    parser.add_argument('--lr', type=float, default=1e-4, metavar='LR',
                         help='learning rate')
     parser.add_argument('--momentum', type=float, default=0.9, metavar='M',
                         help='SGD momentum')
@@ -108,21 +111,26 @@ def main():
 
     kwargs = {'num_workers': 1, 'pin_memory': True} if use_cuda else {}
 
+    np.random.seed(args.seed)
     if args.data == 'FashionMNIST':
         train_dataset = OmniFashionMNIST(fov=120, flip=True, h_rotate=True, v_rotate=True, img_std=255, train=True)
-        test_dataset = OmniFashionMNIST(fov=120, flip=True, h_rotate=True, v_rotate=True, img_std=255, train=False)
+        test_dataset = OmniFashionMNIST(fov=120, flip=True, h_rotate=True, v_rotate=True, img_std=255, train=False, fix_aug=True)
     elif args.data == 'MNIST':
         train_dataset = OmniMNIST(fov=120, flip=True, h_rotate=True, v_rotate=True, train=True)
-        test_dataset = OmniMNIST(fov=120, flip=True, h_rotate=True, v_rotate=True, train=False)
+        test_dataset = OmniMNIST(fov=120, flip=True, h_rotate=True, v_rotate=True, train=False, fix_aug=True)
     train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, **kwargs)
     test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=args.test_batch_size, shuffle=False, **kwargs)
 
     
     # Train
     sphere_model = SphereNet().to(device)
-    sphere_optimizer = torch.optim.SGD(sphere_model.parameters(), lr=args.lr, momentum=args.momentum)
     model = Net().to(device)
-    optimizer = torch.optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum)
+    if args.optimizer == 'adam':
+        sphere_optimizer = torch.optim.Adam(sphere_model.parameters(), lr=args.lr)
+        optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
+    elif args.optimizer == 'sgd':
+        sphere_optimizer = torch.optim.SGD(sphere_model.parameters(), lr=args.lr, momentum=args.momentum)
+        optimizer = torch.optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum)
     for epoch in range(1, args.epochs + 1):
         # SphereCNN
         # sphere_model.load_state_dict(torch.load('sphere_model.pkl'))
