@@ -75,79 +75,16 @@ def gen_filters_coordinates(h, w, stride=1):
     return _gen_filters_coordinates(h, w, stride).copy()
 
 
-def _slice_xy(input, r_coord, c_coord, slice_mode='tensor'):
-    if slice_mode == 'tensor':
-        return input[..., r_coord, c_coord]
-    elif slice_mode == 'points':
-        assert len(input.shape) == len(r_coord.shape)
-        assert input.shape[:2] == r_coord.shape[:2]
-        assert input.shape[:2] == c_coord.shape[:2]
-        bidx = torch.arange(input.size(0), device=r_coord.device).long()
-        cidx = torch.arange(input.size(1), device=r_coord.device).long()
-        bidx = bidx[:, None, None, None]
-        cidx = cidx[None, :, None, None]
-        return input[bidx, cidx, r_coord, c_coord]
-    else:
-        raise NotImplementedError()
+def gen_grid_coordinates(h, w, stride=1):
+    coordinates = gen_filters_coordinates(h, w, stride).copy()
+    coordinates[0] = (coordinates[0] * 2 / h) - 1
+    coordinates[1] = (coordinates[1] * 2 / w) - 1
+    coordinates = coordinates[::-1]
+    coordinates = coordinates.transpose(1, 3, 2, 4, 0)
+    sz = coordinates.shape
+    coordinates = coordinates.reshape(1, sz[0]*sz[1], sz[2]*sz[3], sz[4])
 
-
-def map_coordinates(input, coordinates, mode='bilinear', pad='wrap', slice_mode='tensor'):
-    ''' PyTorch version of scipy.ndimage.interpolation.map_coordinates
-    input: (B, C, H, W)
-    coordinates: (2, ...)
-    mode: sampling method, options = {'nearest', 'bilinear'}
-    pad: options = {'zero', 'wrap'}
-    '''
-    if not torch.is_tensor(coordinates):
-        coordinates = torch.FloatTensor(coordinates).to(input.device)
-    elif coordinates.dtype != torch.float32:
-        coordinates = coordinates.float()
-    coordinates.requires_grad = False
-    h = input.shape[2]
-    w = input.shape[3]
-
-    def _coordinates_pad_wrap(h, w, coordinates):
-        coordinates[0] = coordinates[0] % h
-        coordinates[1] = coordinates[1] % w
-        return coordinates
-
-    def _coordinates_pad_zero(h, w, coordinates):
-        out_of_bound_h = (coordinates[0] < 0) | (coordinates[0] > (h-1))
-        out_of_bound_w = (coordinates[1] < 0) | (coordinates[1] > (w-1))
-        coordinates[0, out_of_bound_h] = h
-        coordinates[1, out_of_bound_w] = w
-        return coordinates
-
-    if mode == 'nearest':
-        coordinates = torch.round(coordinates).long()
-        if pad == 'wrap':
-            coordinates = _coordinates_pad_wrap(h, w, coordinates)
-        elif pad == 'zero':
-            # coordinates: 2, 3, 3
-            # out_of_bound: 3, 3
-            # return: B, C, H, W = 2, 3, 3, 3
-            input = nn.functional.pad(input, pad=(0, 1, 0, 1), mode='constant', value=0)
-            coordinates = _coordinates_pad_zero(h, w, coordinates)
-        return _slice_xy(input, coordinates[0], coordinates[1], slice_mode)
-    elif mode == 'bilinear':
-        co_floor = torch.floor(coordinates).long()
-        co_ceil = torch.ceil(coordinates).long()
-        d1 = (coordinates[1] - co_floor[1].detach().float())
-        d2 = (coordinates[0] - co_floor[0].detach().float())
-        if pad == 'wrap':
-            co_floor = _coordinates_pad_wrap(h, w, co_floor)
-            co_ceil = _coordinates_pad_wrap(h, w, co_ceil)
-        elif pad == 'zero':
-            input = nn.functional.pad(input, pad=(0, 1, 0, 1), mode='constant', value=0)
-            co_floor = _coordinates_pad_zero(h, w, co_floor)
-            co_ceil = _coordinates_pad_zero(h, w, co_ceil)
-        f00 = _slice_xy(input, co_floor[0], co_floor[1], slice_mode)
-        f10 = _slice_xy(input, co_floor[0], co_ceil[1], slice_mode)
-        f01 = _slice_xy(input, co_ceil[0], co_floor[1], slice_mode)
-        f11 = _slice_xy(input, co_ceil[0], co_ceil[1], slice_mode)
-        fx1 = f00 + d1*(f10 - f00)
-        fx2 = f01 + d1*(f11 - f01)
-        return fx1 + d2*(fx2 - fx1)    
+    return coordinates.copy()
 
 
 class SphereConv2D(nn.Module):
@@ -157,53 +94,47 @@ class SphereConv2D(nn.Module):
     def __init__(self, in_c, out_c, stride=1, bias=True):
         super(SphereConv2D, self).__init__()
         self.stride = stride
-        self.conv = nn.Conv2d(in_c, out_c, kernel_size=3, stride=3)
+        self.conv = nn.Conv2d(in_c, out_c, kernel_size=3, stride=3, padding=0)
+        self.grid_shape = None
+        self.grid = None
 
     def forward(self, x):
-        # x: (B, C, H, W)
-        coordinates = gen_filters_coordinates(x.shape[2], x.shape[3], self.stride).copy()
-        coordinates[0] = (coordinates[0] * 2 / x.shape[2]) - 1
-        coordinates[1] = (coordinates[1] * 2 / x.shape[3]) - 1
-        coordinates = coordinates[::-1]
-        coordinates = coordinates.transpose(1, 3, 2, 4, 0)
-        coordinates = coordinates.reshape(x.shape[2]*3, x.shape[3]*3, 2)
-        grid = torch.FloatTensor(coordinates).to(x.device)
-        grid = grid.unsqueeze(0).repeat(x.shape[0], 1, 1, 1)
+        if self.grid_shape is None or self.grid_shape != tuple(x.shape[2:4]):
+            self.grid_shape = tuple(x.shape[2:4])
+            coordinates = gen_grid_coordinates(x.shape[2], x.shape[3])
+            with torch.no_grad():
+                self.grid = torch.FloatTensor(coordinates).to(x.device)
+                self.grid.requires_grad = True
 
-        x = nn.functional.grid_sample(x, grid)
-        return self.conv(x)
+        with torch.no_grad():
+            grid = self.grid.repeat(x.shape[0], 1, 1, 1)
+
+        return self.conv(nn.functional.grid_sample(x, grid))
 
 
 class SphereMaxPool2D(nn.Module):
     '''  SphereMaxPool2D
-    mode: way of sampling pixel rgb values with non-integer coordinates, options={'bilinear', 'nearest'}
     Note that this layer only support 3x3 filter
     '''
-    def __init__(self, stride=1, mode='bilinear'):
+    def __init__(self, stride=1):
         super(SphereMaxPool2D, self).__init__()
-        self.mode = mode
         self.stride = stride
+        self.grid_shape = None
+        self.grid = None
+        self.pool = nn.MaxPool2d(kernel_size=3, stride=3)
 
     def forward(self, x):
-        # x: (B, C, H, W)
-        with torch.no_grad():
-            # (2, H/2, W/2, 3, 3)
-            coordinates = gen_filters_coordinates(x.shape[2], x.shape[3], self.stride)
-            sz = coordinates.shape
-            # (2, H/2, W/2, 9)
-            coordinates = coordinates.reshape(sz[0], sz[1], sz[2], 9)
-            coordinates = torch.FloatTensor(coordinates).to(x.device)
-            # (B, C, H/2, W/2, 9)
-            _x = map_coordinates(x.detach(), coordinates, mode=self.mode)
-            maxv, maxi = _x.max(dim=4)
-            # maxi = maxi.cpu().numpy()
-            ridx = torch.arange(coordinates.size(1), device=x.device).long()
-            cidx = torch.arange(coordinates.size(2), device=x.device).long()
-            ridx = ridx[None, None, :, None]
-            cidx = cidx[None, None, None, :]
-            max_coord = coordinates[:, ridx, cidx, maxi]
+        if self.grid_shape is None or self.grid_shape != tuple(x.shape[2:4]):
+            self.grid_shape = tuple(x.shape[2:4])
+            coordinates = gen_grid_coordinates(x.shape[2], x.shape[3], self.stride)
+            with torch.no_grad():
+                self.grid = torch.FloatTensor(coordinates).to(x.device)
+                self.grid.requires_grad = True
 
-        return map_coordinates(x, max_coord, mode=self.mode, slice_mode='points')
+        with torch.no_grad():
+            grid = self.grid.repeat(x.shape[0], 1, 1, 1)
+
+        return self.pool(nn.functional.grid_sample(x, grid))
 
 
 if __name__ == '__main__':
