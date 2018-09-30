@@ -1,6 +1,6 @@
 import argparse
-from dataset import OmniMNIST, OmniFashionMNIST
-from sphere_cnn import SphereConv2D, SphereMaxPool2D
+from spherenet import OmniMNIST, OmniFashionMNIST
+from spherenet import SphereConv2D, SphereMaxPool2D
 import torch
 from torch import nn
 import torch.nn.functional as F
@@ -14,7 +14,7 @@ class SphereNet(nn.Module):
         self.pool1 = SphereMaxPool2D(stride=2)
         self.conv2 = SphereConv2D(32, 64, stride=1)
         self.pool2 = SphereMaxPool2D(stride=2)
-        
+
         self.fc = nn.Linear(14400, 10)
 
     def forward(self, x):
@@ -39,7 +39,7 @@ class Net(nn.Module):
         x = self.fc(x)
         return x
 
-       
+
 def train(args, model, device, train_loader, optimizer, epoch):
     model.train()
     for batch_idx, (data, target) in enumerate(train_loader):
@@ -121,7 +121,6 @@ def main():
     train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, **kwargs)
     test_loader = torch.utils.data.DataLoader(test_dataset, batch_size=args.test_batch_size, shuffle=False, **kwargs)
 
-    
     # Train
     sphere_model = SphereNet().to(device)
     model = Net().to(device)
@@ -131,15 +130,16 @@ def main():
     elif args.optimizer == 'sgd':
         sphere_optimizer = torch.optim.SGD(sphere_model.parameters(), lr=args.lr, momentum=args.momentum)
         optimizer = torch.optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum)
+
     for epoch in range(1, args.epochs + 1):
         # SphereCNN
-        # sphere_model.load_state_dict(torch.load('sphere_model.pkl'))
         print('{} Sphere CNN {}'.format('='*10, '='*10))
         train(args, sphere_model, device, train_loader, sphere_optimizer, epoch)
         test(args, sphere_model, device, test_loader)
         if epoch % args.save_interval == 0:
-        	torch.save(sphere_model.state_dict(), 'sphere_model.pkl')
-        # conventional CNN
+            torch.save(sphere_model.state_dict(), 'sphere_model.pkl')
+
+        # Conventional CNN
         print('{} Conventional CNN {}'.format('='*10, '='*10))
         train(args, model, device, train_loader, optimizer, epoch)
         test(args, model, device, test_loader)

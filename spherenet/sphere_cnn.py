@@ -1,12 +1,8 @@
-import matplotlib.pyplot as plt
-import matplotlib.image as mpimg
 import numpy as np
 from numpy import sin, cos, tan, pi, arcsin, arctan
 from functools import lru_cache
 import torch
 from torch import nn
-
-from deform_conv import ConvOffset2d
 
 
 # Calculate kernels of SphereCNN
@@ -138,6 +134,8 @@ class SphereMaxPool2D(nn.Module):
 
 
 if __name__ == '__main__':
+    import matplotlib.pyplot as plt
+    import matplotlib.image as mpimg
     # test cnn
     cnn = SphereConv2D(3, 5, 1)
     out = cnn(torch.randn(2, 3, 10, 10))
