@@ -3,6 +3,7 @@ from numpy import sin, cos, tan, pi, arcsin, arctan
 from functools import lru_cache
 import torch
 from torch import nn
+from torch.nn.parameter import Parameter
 
 
 # Calculate kernels of SphereCNN
@@ -87,13 +88,25 @@ class SphereConv2D(nn.Module):
     '''  SphereConv2D
     Note that this layer only support 3x3 filter
     '''
-    def __init__(self, in_c, out_c, stride=1, mode='bilinear'):
+    def __init__(self, in_c, out_c, stride=1, bias=True, mode='bilinear'):
         super(SphereConv2D, self).__init__()
+        self.in_c = in_c
+        self.out_c = out_c
         self.stride = stride
         self.mode = mode
-        self.conv = nn.Conv2d(in_c, out_c, kernel_size=3, stride=3, padding=0)
+        self.weight = Parameter(torch.Tensor(out_c, in_c, 3, 3))
+        if bias:
+            self.bias = Parameter(torch.Tensor(out_c))
+        else:
+            self.register_parameter('bias', None)
         self.grid_shape = None
         self.grid = None
+
+        self.reset_parameters()
+
+    def reset_parameters(self):
+        nn.init.kaiming_uniform_(self.weight, a=np.sqrt(5))
+        self.bias.data.zero_()
 
     def forward(self, x):
         if self.grid_shape is None or self.grid_shape != tuple(x.shape[2:4]):
@@ -106,7 +119,9 @@ class SphereConv2D(nn.Module):
         with torch.no_grad():
             grid = self.grid.repeat(x.shape[0], 1, 1, 1)
 
-        return self.conv(nn.functional.grid_sample(x, grid, mode=self.mode))
+        x = nn.functional.grid_sample(x, grid, mode=self.mode)
+        x = nn.functional.conv2d(x, self.weight, self.bias, stride=3)
+        return x
 
 
 class SphereMaxPool2D(nn.Module):
