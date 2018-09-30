@@ -87,9 +87,10 @@ class SphereConv2D(nn.Module):
     '''  SphereConv2D
     Note that this layer only support 3x3 filter
     '''
-    def __init__(self, in_c, out_c, stride=1, bias=True):
+    def __init__(self, in_c, out_c, stride=1, mode='bilinear'):
         super(SphereConv2D, self).__init__()
         self.stride = stride
+        self.mode = mode
         self.conv = nn.Conv2d(in_c, out_c, kernel_size=3, stride=3, padding=0)
         self.grid_shape = None
         self.grid = None
@@ -97,7 +98,7 @@ class SphereConv2D(nn.Module):
     def forward(self, x):
         if self.grid_shape is None or self.grid_shape != tuple(x.shape[2:4]):
             self.grid_shape = tuple(x.shape[2:4])
-            coordinates = gen_grid_coordinates(x.shape[2], x.shape[3])
+            coordinates = gen_grid_coordinates(x.shape[2], x.shape[3], self.stride)
             with torch.no_grad():
                 self.grid = torch.FloatTensor(coordinates).to(x.device)
                 self.grid.requires_grad = True
@@ -105,16 +106,17 @@ class SphereConv2D(nn.Module):
         with torch.no_grad():
             grid = self.grid.repeat(x.shape[0], 1, 1, 1)
 
-        return self.conv(nn.functional.grid_sample(x, grid))
+        return self.conv(nn.functional.grid_sample(x, grid, mode=self.mode))
 
 
 class SphereMaxPool2D(nn.Module):
     '''  SphereMaxPool2D
     Note that this layer only support 3x3 filter
     '''
-    def __init__(self, stride=1):
+    def __init__(self, stride=1, mode='bilinear'):
         super(SphereMaxPool2D, self).__init__()
         self.stride = stride
+        self.mode = mode
         self.grid_shape = None
         self.grid = None
         self.pool = nn.MaxPool2d(kernel_size=3, stride=3)
@@ -130,7 +132,7 @@ class SphereMaxPool2D(nn.Module):
         with torch.no_grad():
             grid = self.grid.repeat(x.shape[0], 1, 1, 1)
 
-        return self.pool(nn.functional.grid_sample(x, grid))
+        return self.pool(nn.functional.grid_sample(x, grid, mode=self.mode))
 
 
 if __name__ == '__main__':
