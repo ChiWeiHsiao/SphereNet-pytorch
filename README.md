@@ -29,20 +29,19 @@ img = torch.randn(1, 1, 60, 60)  # (batch, channel, height, weight)
 out = conv1(img)  # (1, 32, 60, 60)
 out = pool1(out)  # (1, 32, 30, 30)
 ```
-- To apply SphereNet in your trained model, simply replace the ```nn.Conv2d``` with ```SphereConv2D```, and replace ```nn.MaxPool2d``` with ```SphereMaxPool2D```.
+- To apply SphereNet in your trained model, simply replace the ```nn.Conv2d``` with ```SphereConv2D```, and replace ```nn.MaxPool2d``` with ```SphereMaxPool2D```. They should work well with `load_state_dict`.
 
 ## Results
-- Classification OminiMNIST data
-    - <img src="https://i.imgur.com/TCwFLad.png" width="200" height="200" />
-    - Reproduce Result
-      - | Method        | Test Error (%) |
-        | ------------- |:--------------:|
-        | SphereNet ( paper )     | 5.59 |
-        | SphereNet ( reproduce ) | 5.77 |
-        | EquirectCNN ( paper )   | 9.61 |
-        | EquirectCNN ( reproduce )| 9.63 |
-    - Testing Accuracy of SphereCNN / CNN
-      - <img src="https://i.imgur.com/BKnGqf1.png" width="400" />
+- Classification OminiMNIST data (`spherenet.OmniMNIST`, `spherenet.OmniFashionMNIST`)
+    - <img src="https://imgur.com/WvEZM2V.png" height="150" />
+- Reproduce OmniMNIST Result
+    - | Method        | Test Error (%) |
+      | ------------- |:--------------:|
+      | SphereNet ( paper )     | 5.59 |
+      | SphereNet ( ours ) | 5.77 |
+      | EquirectCNN ( paper )   | 9.61 |
+      | EquirectCNN ( ours )| 9.63 |
+    - <img src="https://i.imgur.com/BKnGqf1.png" width="400" />
     
 ## References
 - [paper](http://openaccess.thecvf.com/content_ECCV_2018/papers/Benjamin_Coors_SphereNet_Learning_Spherical_ECCV_2018_paper.pdf)
